@@ -1,15 +1,32 @@
 const fs = require("fs");
 const FILE = "./attendance.json";
 
-let data = {};
+let data = {
+  users: {},
+  settings: {
+    serverId: null,
+    channelId: null,
+    reminderEnabled: true,
+    reminderHour: 20
+  }
+};
 
 function loadData() {
   if (fs.existsSync(FILE)) {
     try {
-      data = JSON.parse(fs.readFileSync(FILE));
+      const raw = JSON.parse(fs.readFileSync(FILE));
+
+      data = {
+        users: raw.users || {},
+        settings: raw.settings || data.settings
+      };
+
     } catch {
-      data = {};
+      console.log("⚠ JSON corrupted. Resetting.");
+      saveData();
     }
+  } else {
+    saveData();
   }
 }
 
@@ -18,8 +35,8 @@ function saveData() {
 }
 
 function ensureUser(id) {
-  if (!data[id]) {
-    data[id] = {
+  if (!data.users[id]) {
+    data.users[id] = {
       total: 0,
       start: null,
       sessions: [],
