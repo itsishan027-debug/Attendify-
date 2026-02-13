@@ -2,13 +2,7 @@ module.exports = {
   TOKEN: process.env.TOKEN,
   CLIENT_ID: process.env.CLIENT_ID,
 
-  TARGET_SERVER_ID: "PUT_YOUR_SERVER_ID",
-  TARGET_CHANNEL_ID: "PUT_YOUR_CHANNEL_ID",
-
   ADMIN_IDS: [
-    "PUT_YOUR_DISCORD_USER_ID"
-  ],
-
-  REMINDER_ENABLED: true,
-  REMINDER_HOUR: 20
+    "1385928188898840609"
+  ]
 };
