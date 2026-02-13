@@ -1,1 +1,9 @@
-{}
+{
+  "users": {},
+  "settings": {
+    "serverId": null,
+    "channelId": null,
+    "reminderEnabled": true,
+    "reminderHour": 20
+  }
+}
