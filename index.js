@@ -1,163 +1,67 @@
-const { 
-  Client, 
-  GatewayIntentBits, 
-  Partials 
-} = require("discord.js");
+const {
+Client,
+GatewayIntentBits
+} = require('discord.js');
 
-const { TOKEN } = require("./config");
-const { registerCommands } = require("./commands");
-const { loadData, data, saveData, ensureUser } = require("./data");
-const { startReminder } = require("./reminder");
+const {attendanceEmbed,reminderEmbed} = require("./embed")
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences, // ✅ REQUIRED FOR ONLINE/OFFLINE
-    GatewayIntentBits.MessageContent
-  ],
-  partials: [Partials.Channel]
+intents:[GatewayIntentBits.Guilds]
 });
 
+const SERVER_ID = "1434084048719843420"
+const CHANNEL_ID = "1471509183215173664"
 
-// =======================
-// BOT READY
-// =======================
+let data = {};
 
-client.once("ready", async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+function formatDuration(ms){
+const totalSeconds=Math.floor(ms/1000)
+const hours=Math.floor(totalSeconds/3600)
+const minutes=Math.floor((totalSeconds%3600)/60)
+const seconds=totalSeconds%60
+return `${hours}h ${minutes}m ${seconds}s`
+}
 
-  loadData();
-  await registerCommands();
-  startReminder(client);
-});
+client.on("interactionCreate",async interaction=>{
 
+if(!interaction.isChatInputCommand()) return;
 
-// =======================
-// PRESENCE TRACKING
-// =======================
+if(interaction.commandName==="attend"){
 
-client.on("presenceUpdate", async (oldPresence, newPresence) => {
+const now=Date.now();
+data[interaction.user.id]=now;
 
-  if (!newPresence || !newPresence.member) return;
+await interaction.reply({
+embeds:[attendanceEmbed(interaction.user,formatDuration(0))]
+})
+}
 
-  const userId = newPresence.member.id;
-  const status = newPresence.status;
+})
 
-  // Ignore bots
-  if (newPresence.member.user.bot) return;
+setInterval(async()=>{
 
-  ensureUser(userId);
+const guild=client.guilds.cache.get(SERVER_ID)
+if(!guild) return;
 
-  const channelId = data.settings?.channelId;
-  if (!channelId) return;
+const channel=guild.channels.cache.get(CHANNEL_ID)
+if(!channel) return;
 
-  const channel = newPresence.guild.channels.cache.get(channelId);
-  if (!channel) return;
+for(const id in data){
 
-  // ================= ONLINE =================
-  if (status === "online" || status === "idle" || status === "dnd") {
+const diff=Date.now()-data[id]
 
-    if (!data[userId].startTime) {
-      data[userId].startTime = Date.now();
-      saveData();
+if(diff>3600000){
 
-      const onlineTimestamp = Math.floor(Date.now() / 1000);
+const member=await guild.members.fetch(id)
 
-      channel.send(
-        `🟢 <@${userId}> is now **ONLINE**\n\n` +
-        `🟢 Online: <t:${onlineTimestamp}:t>`
-      );
-    }
-  }
+channel.send({
+embeds:[reminderEmbed(member.user)]
+})
 
-  // ================= OFFLINE =================
-  if (status === "offline") {
+data[id]=Date.now()
+}
+}
 
-    const startTime = data[userId].startTime;
-    if (!startTime) return;
+},600000)
 
-    const endTime = Date.now();
-    const durationMs = endTime - startTime;
-
-    function formatDuration(ms) {
-      const totalSeconds = Math.floor(ms / 1000);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      return `${hours}h ${minutes}m`;
-    }
-
-    const onlineTimestamp = Math.floor(startTime / 1000);
-    const offlineTimestamp = Math.floor(endTime / 1000);
-
-    channel.send(
-      `🔴 <@${userId}> is now **OFFLINE**\n\n` +
-      `🟢 Online: <t:${onlineTimestamp}:t>\n` +
-      `🔴 Offline: <t:${offlineTimestamp}:t>\n` +
-      `⏱ Duration: ${formatDuration(durationMs)}`
-    );
-
-    // Reset startTime
-    data[userId].startTime = null;
-    saveData();
-  }
-
-});
-
-
-// =======================
-// INTERACTION HANDLER
-// =======================
-
-client.on("interactionCreate", async (interaction) => {
-
-  try {
-
-    if (interaction.isChatInputCommand()) {
-
-      if (interaction.commandName === "setup") {
-        return require("./setup").handleSetup(interaction);
-      }
-
-      if (interaction.commandName === "help") {
-        return interaction.reply({
-          content: "📘 Help section coming soon.",
-          ephemeral: true
-        });
-      }
-
-      if (interaction.commandName === "about") {
-        return interaction.reply({
-          content: "🤖 Bot created for attendance tracking system.",
-          ephemeral: true
-        });
-      }
-    }
-
-    if (interaction.isButton()) {
-      return require("./setup").handleButton(interaction);
-    }
-
-    if (interaction.isModalSubmit()) {
-      return require("./setup").handleModal(interaction);
-    }
-
-  } catch (error) {
-    console.error("❌ Interaction Error:", error);
-
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: "⚠️ Something went wrong.", ephemeral: true });
-    } else {
-      await interaction.reply({ content: "⚠️ Something went wrong.", ephemeral: true });
-    }
-  }
-
-});
-
-
-// =======================
-// LOGIN
-// =======================
-
-client.login(TOKEN);
+client.login(process.env.TOKEN);
