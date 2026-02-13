@@ -1,88 +1,96 @@
-require("dotenv").config();
-const { Client, GatewayIntentBits } = require("discord.js");
-const express = require("express");
+const { 
+  Client, 
+  GatewayIntentBits, 
+  Partials 
+} = require("discord.js");
 
-const { TARGET_SERVER_ID, TARGET_CHANNEL_ID, TOKEN } = require("./config");
-const { loadData, saveData, ensureUser } = require("./data");
-const { handleOnline, handleOffline, handleStatus, handleHistory } = require("./attendance");
+const { TOKEN } = require("./config");
+const { registerCommands } = require("./commands");
+const { loadData } = require("./data");
 const { startReminder } = require("./reminder");
-const { handleSetup, handleReset } = require("./setup");
-
-const app = express();
-app.get("/", (req, res) => res.send("Bot Running"));
-app.listen(3000);
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.MessageContent
-  ]
+  ],
+  partials: [Partials.Channel]
 });
 
-loadData();
 
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-  if (!message.guild) return;
-  if (message.guild.id !== TARGET_SERVER_ID) return;
-  if (message.channel.id !== TARGET_CHANNEL_ID) return;
+// =======================
+// BOT READY
+// =======================
 
-  const content = message.content.toLowerCase().trim();
-  const userId = message.author.id;
+client.once("ready", async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
 
-  ensureUser(userId);
-  require("./data").data[userId].lastSeen = Date.now();
-  saveData();
-
-  if (content === "online")
-    return handleOnline(userId, (msg) => message.channel.send(msg));
-
-  if (content === "offline")
-    return handleOffline(userId, (msg) => message.channel.send(msg));
+  loadData();              // Load JSON
+  await registerCommands(); // Register Slash Commands
+  startReminder(client);    // Start Reminder System
 });
+
+
+// =======================
+// INTERACTION HANDLER
+// =======================
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  if (interaction.guildId !== TARGET_SERVER_ID) return;
-  if (interaction.channelId !== TARGET_CHANNEL_ID)
-    return interaction.reply({ content: "Wrong channel", ephemeral: true });
 
-  const reply = (msg, ephemeral = false) =>
-    interaction.reply(typeof msg === "string"
-      ? { content: msg, ephemeral }
-      : msg);
+  try {
 
-  const userId = interaction.user.id;
+    // ===== SLASH COMMANDS =====
+    if (interaction.isChatInputCommand()) {
 
-  if (interaction.commandName === "online")
-    return handleOnline(userId, reply);
+      // SETUP PANEL
+      if (interaction.commandName === "setup") {
+        return require("./setup").handleSetup(interaction);
+      }
 
-  if (interaction.commandName === "offline")
-    return handleOffline(userId, reply);
+      // HELP
+      if (interaction.commandName === "help") {
+        return interaction.reply({
+          content: "📘 Help section coming soon.",
+          ephemeral: true
+        });
+      }
 
-  if (interaction.commandName === "status")
-    return handleStatus(userId, reply);
+      // ABOUT
+      if (interaction.commandName === "about") {
+        return interaction.reply({
+          content: "🤖 Bot created for attendance tracking system.",
+          ephemeral: true
+        });
+      }
+    }
 
-  if (interaction.commandName === "history")
-    return handleHistory(userId, reply);
+    // ===== BUTTON HANDLER =====
+    if (interaction.isButton()) {
+      return require("./setup").handleButton(interaction);
+    }
 
-  if (interaction.commandName === "setup")
-    return handleSetup(userId, reply);
+    // ===== MODAL HANDLER =====
+    if (interaction.isModalSubmit()) {
+      return require("./setup").handleModal(interaction);
+    }
 
-  if (interaction.commandName === "resetdata")
-    return handleReset(userId, reply);
+  } catch (error) {
+    console.error("❌ Interaction Error:", error);
 
-  if (interaction.commandName === "help")
-    return reply("Use /online, /offline, /status, /history, /setup");
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({ content: "⚠️ Something went wrong.", ephemeral: true });
+    } else {
+      await interaction.reply({ content: "⚠️ Something went wrong.", ephemeral: true });
+    }
+  }
 
-  if (interaction.commandName === "about")
-    return reply("Attendance Bot v2.0 | Created for private server tracking.");
 });
 
-client.once("ready", () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  startReminder(client, TARGET_SERVER_ID, TARGET_CHANNEL_ID);
-});
+
+// =======================
+// LOGIN
+// =======================
 
 client.login(TOKEN);
