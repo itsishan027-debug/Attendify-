@@ -1,5 +1,6 @@
 const { data } = require("./data");
 const { REMINDER_ENABLED, REMINDER_HOUR } = require("./config");
+const { EmbedBuilder } = require("discord.js");
 
 const REMINDER_MESSAGES = [
 "🥺 {user}, I kinda miss you… a lot actually.",
@@ -54,13 +55,27 @@ const REMINDER_MESSAGES = [
 "❤️ {user}, just felt like saying—I miss you."
 ];
 
-function getRandomMessage(id) {
-  const msg = REMINDER_MESSAGES[Math.floor(Math.random() * REMINDER_MESSAGES.length)];
-  return msg.replace("{user}", `<@${id}>`);
+function getRandomEmbed(id) {
+
+  const msg =
+    REMINDER_MESSAGES[Math.floor(Math.random() * REMINDER_MESSAGES.length)]
+    .replace("{user}", `<@${id}>`);
+
+  const colors = [0x5865F2, 0x57F287, 0xFEE75C, 0xED4245, 0xEB459E];
+  const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+  return new EmbedBuilder()
+    .setTitle("🔔 Reminder")
+    .setDescription(msg)
+    .setColor(randomColor)
+    .setFooter({ text: "Attendify System" })
+    .setTimestamp();
 }
 
 function startReminder(client, SERVER_ID, CHANNEL_ID) {
+
   setInterval(async () => {
+
     if (!REMINDER_ENABLED) return;
 
     const now = new Date();
@@ -77,13 +92,15 @@ function startReminder(client, SERVER_ID, CHANNEL_ID) {
 
     channel.members.forEach(member => {
       if (member.user.bot) return;
-      const r = data[member.id];
+
+      const r = data.users?.[member.id];
+
       if (!r || !r.lastSeen || r.lastSeen < today.getTime()) {
-        channel.send(getRandomMessage(member.id));
+        channel.send({ embeds: [getRandomEmbed(member.id)] });
       }
     });
 
   }, 60000);
 }
 
-module.exports = { startReminder };
+module.exports = { startReminder, getRandomEmbed };
