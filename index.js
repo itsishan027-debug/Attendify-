@@ -6,7 +6,7 @@ const {
 
 const { TOKEN } = require("./config");
 const { registerCommands } = require("./commands");
-const { loadData } = require("./data");
+const { loadData, data, saveData, ensureUser } = require("./data");
 const { startReminder } = require("./reminder");
 
 const client = new Client({
@@ -14,6 +14,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences, // ✅ REQUIRED FOR ONLINE/OFFLINE
     GatewayIntentBits.MessageContent
   ],
   partials: [Partials.Channel]
@@ -27,9 +28,81 @@ const client = new Client({
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  loadData();              // Load JSON
-  await registerCommands(); // Register Slash Commands
-  startReminder(client);    // Start Reminder System
+  loadData();
+  await registerCommands();
+  startReminder(client);
+});
+
+
+// =======================
+// PRESENCE TRACKING
+// =======================
+
+client.on("presenceUpdate", async (oldPresence, newPresence) => {
+
+  if (!newPresence || !newPresence.member) return;
+
+  const userId = newPresence.member.id;
+  const status = newPresence.status;
+
+  // Ignore bots
+  if (newPresence.member.user.bot) return;
+
+  ensureUser(userId);
+
+  const channelId = data.settings?.channelId;
+  if (!channelId) return;
+
+  const channel = newPresence.guild.channels.cache.get(channelId);
+  if (!channel) return;
+
+  // ================= ONLINE =================
+  if (status === "online" || status === "idle" || status === "dnd") {
+
+    if (!data[userId].startTime) {
+      data[userId].startTime = Date.now();
+      saveData();
+
+      const onlineTimestamp = Math.floor(Date.now() / 1000);
+
+      channel.send(
+        `🟢 <@${userId}> is now **ONLINE**\n\n` +
+        `🟢 Online: <t:${onlineTimestamp}:t>`
+      );
+    }
+  }
+
+  // ================= OFFLINE =================
+  if (status === "offline") {
+
+    const startTime = data[userId].startTime;
+    if (!startTime) return;
+
+    const endTime = Date.now();
+    const durationMs = endTime - startTime;
+
+    function formatDuration(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
+    }
+
+    const onlineTimestamp = Math.floor(startTime / 1000);
+    const offlineTimestamp = Math.floor(endTime / 1000);
+
+    channel.send(
+      `🔴 <@${userId}> is now **OFFLINE**\n\n` +
+      `🟢 Online: <t:${onlineTimestamp}:t>\n` +
+      `🔴 Offline: <t:${offlineTimestamp}:t>\n` +
+      `⏱ Duration: ${formatDuration(durationMs)}`
+    );
+
+    // Reset startTime
+    data[userId].startTime = null;
+    saveData();
+  }
+
 });
 
 
@@ -41,15 +114,12 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
 
-    // ===== SLASH COMMANDS =====
     if (interaction.isChatInputCommand()) {
 
-      // SETUP PANEL
       if (interaction.commandName === "setup") {
         return require("./setup").handleSetup(interaction);
       }
 
-      // HELP
       if (interaction.commandName === "help") {
         return interaction.reply({
           content: "📘 Help section coming soon.",
@@ -57,7 +127,6 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      // ABOUT
       if (interaction.commandName === "about") {
         return interaction.reply({
           content: "🤖 Bot created for attendance tracking system.",
@@ -66,12 +135,10 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    // ===== BUTTON HANDLER =====
     if (interaction.isButton()) {
       return require("./setup").handleButton(interaction);
     }
 
-    // ===== MODAL HANDLER =====
     if (interaction.isModalSubmit()) {
       return require("./setup").handleModal(interaction);
     }
