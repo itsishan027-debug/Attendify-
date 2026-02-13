@@ -15,12 +15,10 @@ function loadData() {
   if (fs.existsSync(FILE)) {
     try {
       const raw = JSON.parse(fs.readFileSync(FILE));
-
       data = {
         users: raw.users || {},
         settings: raw.settings || data.settings
       };
-
     } catch {
       console.log("⚠ JSON corrupted. Resetting.");
       saveData();
@@ -38,7 +36,7 @@ function ensureUser(id) {
   if (!data.users[id]) {
     data.users[id] = {
       total: 0,
-      start: null,
+      startTime: null,   // ✅ changed
       sessions: [],
       lastSeen: null
     };
