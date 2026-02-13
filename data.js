@@ -1,51 +1,32 @@
 const fs = require("fs");
-const FILE = "./attendance.json";
 
 let data = {
   users: {},
   settings: {
-    serverId: null,
-    channelId: null,
     reminderEnabled: true,
-    reminderHour: 20
+    reminderHour: 21,
+    serverId: "1434084048719843420",
+    channelId: "1471509183215173664"
   }
 };
 
-function loadData() {
-  if (fs.existsSync(FILE)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(FILE));
-      data = {
-        users: raw.users || {},
-        settings: raw.settings || data.settings
-      };
-    } catch {
-      console.log("⚠ JSON corrupted. Resetting.");
-      saveData();
-    }
-  } else {
-    saveData();
-  }
+if (fs.existsSync("./data.json")) {
+  data = JSON.parse(fs.readFileSync("./data.json"));
 }
 
 function saveData() {
-  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+  fs.writeFileSync("./data.json", JSON.stringify(data, null, 2));
 }
 
 function ensureUser(id) {
   if (!data.users[id]) {
     data.users[id] = {
       total: 0,
-      startTime: null,   // ✅ changed
       sessions: [],
+      startTime: null,
       lastSeen: null
     };
   }
 }
 
-module.exports = {
-  data,
-  loadData,
-  saveData,
-  ensureUser
-};
+module.exports = { data, saveData, ensureUser };
