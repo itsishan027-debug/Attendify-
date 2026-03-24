@@ -16,7 +16,7 @@ function generateSavageMessage() {
 function getReminderEmbed(userId) {
   return new EmbedBuilder()
     .setColor("#ff0000")
-    .setTitle("🚨 ATTENDANCE POLICE")
+    .setTitle("🚨 ATTENDANCE BOT")
     .setDescription(`<@${userId}> ${generateSavageMessage()}`)
     .setFooter({ text: "Aries Savage Reminder System" })
     .setTimestamp();
