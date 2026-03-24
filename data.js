@@ -4,14 +4,22 @@ let data = {
   users: {},
   settings: {
     reminderEnabled: true,
-    reminderHour: 21,
-    serverId: "1434084048719843420",
-    channelId: "1471509183215173664"
+    reminderHour: 21, 
+    customSlots: [
+      { roleId: null, msg: null },
+      { roleId: null, msg: null },
+      { roleId: null, msg: null }
+    ]
   }
 };
 
 if (fs.existsSync("./data.json")) {
-  data = JSON.parse(fs.readFileSync("./data.json"));
+  try {
+    const fileData = fs.readFileSync("./data.json");
+    data = JSON.parse(fileData);
+  } catch (e) {
+    console.log("Creating new data file...");
+  }
 }
 
 function saveData() {
@@ -20,12 +28,7 @@ function saveData() {
 
 function ensureUser(id) {
   if (!data.users[id]) {
-    data.users[id] = {
-      total: 0,
-      sessions: [],
-      startTime: null,
-      lastSeen: null
-    };
+    data.users[id] = { total: 0, sessions: [], start: null, lastSeen: null };
   }
 }
 
