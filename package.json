@@ -1,7 +1,7 @@
 {
-  "name": "attendance-bot",
+  "name": "aries-attendance-bot",
   "version": "1.0.0",
-  "description": "Advanced Attendance Discord Bot",
+  "description": "Advanced Attendance Bot for Aries Clan",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
