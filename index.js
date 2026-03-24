@@ -1,67 +1,81 @@
-const {
-Client,
-GatewayIntentBits
-} = require('discord.js');
+const { Client, GatewayIntentBits, Events, SlashCommandBuilder, REST, Routes } = require('discord.js');
+const config = require('./config');
+const { handleOnline, handleOffline, forceOfflineAll } = require('./attendance');
+const { startReminder, getReminderEmbed } = require('./reminder');
+const { data, saveData } = require('./data');
+const express = require('express');
 
-const {attendanceEmbed,reminderEmbed} = require("./embed")
+const app = express();
+app.get('/', (req, res) => res.send('Aries Bot Online ✅'));
+app.listen(process.env.PORT || 8080);
 
 const client = new Client({
-intents:[GatewayIntentBits.Guilds]
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers]
 });
 
-const SERVER_ID = "1434084048719843420"
-const CHANNEL_ID = "1471509183215173664"
+// Message Triggers (online/offline)
+client.on(Events.MessageCreate, async (msg) => {
+    if (msg.author.bot || !msg.guild || msg.channel.id !== config.TARGET_CHANNEL_ID) return;
+    const content = msg.content.toLowerCase().trim();
+    const reply = async (opt) => msg.channel.send(opt);
 
-let data = {};
+    if (content === 'online') { 
+        await msg.delete().catch(() => {});
+        await handleOnline(msg.member, reply); 
+    }
+    if (content === 'offline') { 
+        await msg.delete().catch(() => {});
+        await handleOffline(msg.member, reply); 
+    }
+});
 
-function formatDuration(ms){
-const totalSeconds=Math.floor(ms/1000)
-const hours=Math.floor(totalSeconds/3600)
-const minutes=Math.floor((totalSeconds%3600)/60)
-const seconds=totalSeconds%60
-return `${hours}h ${minutes}m ${seconds}s`
-}
+// Admin Commands
+client.on(Events.InteractionCreate, async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    if (!config.ADMIN_IDS.includes(interaction.user.id)) return interaction.reply({ content: "❌ No Permission", ephemeral: true });
 
-client.on("interactionCreate",async interaction=>{
+    if (interaction.commandName === 'setslot') {
+        const num = interaction.options.getInteger('number') - 1;
+        data.settings.customSlots[num] = {
+            roleId: interaction.options.getString('roleid'),
+            msg: interaction.options.getString('message')
+        };
+        saveData();
+        await interaction.reply(`✅ Slot ${num+1} updated!`);
+    }
 
-if(!interaction.isChatInputCommand()) return;
+    if (interaction.commandName === 'testreminder') {
+        const target = interaction.options.getUser('target');
+        const channel = await client.channels.fetch(config.TARGET_CHANNEL_ID);
+        await channel.send({ content: `<@${target.id}>`, embeds: [getReminderEmbed(target.id)] });
+        await interaction.reply({ content: "✅ Test reminder sent!", ephemeral: true });
+    }
 
-if(interaction.commandName==="attend"){
+    if (interaction.commandName === 'restart') {
+        await interaction.reply("🔄 Saving sessions and restarting...");
+        await forceOfflineAll(client);
+        setTimeout(() => process.exit(), 2000);
+    }
+});
 
-const now=Date.now();
-data[interaction.user.id]=now;
+client.once('ready', async () => {
+    const commands = [
+        new SlashCommandBuilder().setName('setslot').setDescription('Configure custom role message')
+            .addIntegerOption(o => o.setName('number').setDescription('Slot 1-3').setRequired(true))
+            .addStringOption(o => o.setName('roleid').setDescription('Role ID').setRequired(true))
+            .addStringOption(o => o.setName('message').setDescription('Msg ({user} for mention)').setRequired(true)),
+        new SlashCommandBuilder().setName('restart').setDescription('Safe system restart'),
+        new SlashCommandBuilder().setName('testreminder').setDescription('Test a savage reminder')
+            .addUserOption(o => o.setName('target').setDescription('User to target').setRequired(true))
+    ];
 
-await interaction.reply({
-embeds:[attendanceEmbed(interaction.user,formatDuration(0))]
-})
-}
+    const rest = new REST({ version: '10' }).setToken(config.TOKEN);
+    await rest.put(Routes.applicationCommands(config.CLIENT_ID), { body: commands });
+    
+    startReminder(client);
+    const ch = await client.channels.fetch(config.TARGET_CHANNEL_ID);
+    if (ch) ch.send("🚀 **Aries Attendance System is ONLINE!**");
+    console.log("✅ Bot Ready");
+});
 
-})
-
-setInterval(async()=>{
-
-const guild=client.guilds.cache.get(SERVER_ID)
-if(!guild) return;
-
-const channel=guild.channels.cache.get(CHANNEL_ID)
-if(!channel) return;
-
-for(const id in data){
-
-const diff=Date.now()-data[id]
-
-if(diff>3600000){
-
-const member=await guild.members.fetch(id)
-
-channel.send({
-embeds:[reminderEmbed(member.user)]
-})
-
-data[id]=Date.now()
-}
-}
-
-},600000)
-
-client.login(process.env.TOKEN);
+client.login(config.TOKEN);
