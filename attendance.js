@@ -1,112 +1,94 @@
 const { EmbedBuilder } = require("discord.js");
 const { data, saveData, ensureUser } = require("./data");
+const config = require("./config");
 
-function format(ms) {
+function formatDuration(ms) {
   const h = Math.floor(ms / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
-  return `${h}h ${m}m`;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function time(ts) {
-  return `<t:${Math.floor(ts / 1000)}:t>`;
-}
-
-async function handleOnline(userId, reply) {
+async function handleOnline(member, reply) {
+  const userId = member.id;
   ensureUser(userId);
+  if (data.users[userId].start) return reply({ content: "⚠️ You are already ONLINE.", ephemeral: true });
 
-  if (data[userId].start)
-    return reply("You are already online.", true);
-
-  data[userId].start = Date.now();
-  data[userId].lastSeen = Date.now();
+  data.users[userId].start = Date.now();
+  data.users[userId].lastSeen = Date.now();
   saveData();
 
-  return reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("Green")
-        .setDescription(`🟢 <@${userId}> is now **ONLINE**`)
-        .setTimestamp()
-    ]
-  });
+  let desc = `✅ **<@${userId}>** has started their session.`;
+  let color = "#2ecc71";
+  let title = "Status: ONLINE";
+
+  // Hierarchy Logic
+  if (userId === config.SUPREME_LEADER_ID) {
+    title = "👑 THE SUPREME LEADER";
+    desc = `⚡ **All hail <@${userId}>!** The ultimate authority is now monitoring the frontlines. ⚡`;
+    color = "#ff0000";
+  } else if (member.roles.cache.has(config.LEADER_ROLE_ID)) {
+    desc = `🛡️ Leader **<@${userId}>** is watching.`;
+    color = "#f1c40f";
+  } else if (member.roles.cache.has(config.EXECUTIVE_ROLE_ID)) {
+    desc = `🚨 **Angry Bird Alert!** Vigilance at peak. <@${userId}> is active.`;
+    color = "#3498db";
+  } else {
+    // Check Custom Slots
+    for (const slot of data.settings.customSlots) {
+      if (slot.roleId && member.roles.cache.has(slot.roleId)) {
+        desc = slot.msg.replace("{user}", `<@${userId}>`);
+        break;
+      }
+    }
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setColor(color)
+    .setAuthor({ name: member.displayName, iconURL: member.user.displayAvatarURL() })
+    .setDescription(desc)
+    .addFields({ name: "Login Time", value: `<t:${Math.floor(Date.now() / 1000)}:t>` })
+    .setTimestamp();
+
+  return reply({ embeds: [embed] });
 }
 
-async function handleOffline(userId, reply) {
+async function handleOffline(member, reply, isRestart = false) {
+  const userId = member.id;
   ensureUser(userId);
-
-  if (!data[userId].start)
-    return reply("You are not online.", true);
+  if (!data.users[userId].start) return !isRestart ? reply({ content: "⚠️ You are not ONLINE.", ephemeral: true }) : null;
 
   const end = Date.now();
-  const duration = end - data[userId].start;
-
-  data[userId].total += duration;
-  data[userId].sessions.push({
-    start: data[userId].start,
-    end,
-    duration
-  });
-
-  data[userId].start = null;
+  const duration = end - data.users[userId].start;
+  data.users[userId].total += duration;
+  data.users[userId].sessions.push({ start: data.users[userId].start, end, duration });
+  data.users[userId].start = null;
   saveData();
 
-  return reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("Red")
-        .setDescription(
-          `🔴 <@${userId}> is now **OFFLINE**\n\n` +
-          `🟢 Online: ${time(data[userId].sessions.at(-1).start)}\n` +
-          `🔴 Offline: ${time(end)}\n` +
-          `⏱ Duration: ${format(duration)}`
-        )
-        .setTimestamp()
-    ]
-  });
+  const embed = new EmbedBuilder()
+    .setTitle(isRestart ? "🔄 RESTART SAVED" : "Status: OFFLINE")
+    .setColor("#7f8c8d")
+    .setDescription(userId === config.SUPREME_LEADER_ID ? `🌑 **The Supreme Leader** has departed.` : `🔴 **<@${userId}>** session ended.`)
+    .addFields({ name: "Session Length", value: `\`${formatDuration(duration)}\`` })
+    .setTimestamp();
+
+  return reply({ embeds: [embed] });
 }
 
-async function handleStatus(userId, reply) {
-  ensureUser(userId);
-
-  return reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("Blue")
-        .setTitle("📊 Attendance Status")
-        .setDescription(
-          `Total Time: ${format(data[userId].total)}\n` +
-          `Currently Online: ${data[userId].start ? "Yes" : "No"}`
-        )
-        .setTimestamp()
-    ]
-  });
+async function forceOfflineAll(client) {
+  const channel = await client.channels.fetch(config.TARGET_CHANNEL_ID);
+  const guild = await client.guilds.fetch(config.TARGET_SERVER_ID);
+  for (const id in data.users) {
+    if (data.users[id].start) {
+      try {
+        const m = await guild.members.fetch(id);
+        await handleOffline(m, (opt) => channel.send(opt), true);
+      } catch (e) {
+        data.users[id].start = null;
+      }
+    }
+  }
+  saveData();
 }
 
-async function handleHistory(userId, reply) {
-  ensureUser(userId);
-
-  const sessions = data[userId].sessions.slice(-5).reverse();
-  if (!sessions.length)
-    return reply("No attendance history found.", true);
-
-  const desc = sessions.map((s, i) =>
-    `**${i + 1}.** 🟢 ${time(s.start)} → 🔴 ${time(s.end)} | ${format(s.duration)}`
-  ).join("\n");
-
-  return reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("Purple")
-        .setTitle("🕒 Attendance History")
-        .setDescription(desc)
-        .setTimestamp()
-    ]
-  });
-}
-
-module.exports = {
-  handleOnline,
-  handleOffline,
-  handleStatus,
-  handleHistory
-};
+module.exports = { handleOnline, handleOffline, forceOfflineAll };
